@@ -1,0 +1,3 @@
+include *.txt
+recursive-include trello_watchman *.yaml *.yml
+recursive-exclude trello_watchman test*.yaml test*.yml

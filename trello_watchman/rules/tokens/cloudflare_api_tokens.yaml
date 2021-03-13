@@ -1,0 +1,20 @@
+---
+filename: cloudflare_api_tokens.yaml
+enabled: true
+meta:
+  name: Cloudflare API Tokens
+  author: PaperMtn
+  date: '2021-03-09'
+  description: Detects exposed Cloudflare API tokens
+  severity: '70'
+scope:
+- text
+test_cases:
+  match_cases:
+  - 6-KJqFyoyNrBraZyIxxrFi2V8tAoJrOr2x7AAAAA
+  fail_cases:
+  - 6-KJqFyoyNrBraZyIxxrFi2V8tAoJrOr2x7AA
+strings:
+- api.cloudflare.com
+- cloudflare_*
+pattern: '[0-9A-Za-z-_]{40}'

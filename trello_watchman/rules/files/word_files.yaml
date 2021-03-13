@@ -1,0 +1,21 @@
+---
+filename: word_files.yaml
+enabled: true
+meta:
+  name: Word Docs
+  author: PaperMtn
+  date: '2021-02-06'
+  description: Detects potentially exposed Word Docs
+  severity: '70'
+scope:
+- attachments
+test_cases:
+  match_cases:
+  - blank
+  fail_cases:
+  - blank
+strings:
+- '.doc'
+- '.docm'
+- '.docx'
+pattern: ''
