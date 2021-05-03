@@ -4,14 +4,27 @@ import builtins
 import calendar
 import requests
 import time
-import json
 import yaml
+import simplejson as json
+from collections import namedtuple
 from requests.exceptions import HTTPError
 from requests.packages.urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 
 from trello_watchman import config as cfg
 from trello_watchman import logger
+
+TEXTRESULT = namedtuple('TextResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                       'match_string', 'board'))
+
+ATTACHMENTRESULT = namedtuple('AttachmentResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                                   'attachments', 'board'))
+
+BOARD = namedtuple('Board', ('id', 'name', 'description', 'closed', 'url', 'members'))
+
+MEMBER = namedtuple('Member', ('id', 'username'))
+
+ATTACHMENT = namedtuple('Attachment', ('id', 'name', 'uploaded', 'filename', 'url'))
 
 
 class TrelloAPI(object):
@@ -97,22 +110,23 @@ def initiate_trello_connection():
     """Create a Trello API client object"""
 
     try:
-        token = os.environ['TRELLO_WATCHMAN_SECRET']
-
+        secret = os.environ.get('TRELLO_WATCHMAN_SECRET')
     except KeyError:
         with open('{}/watchman.conf'.format(os.path.expanduser('~'))) as yaml_file:
             config = yaml.safe_load(yaml_file)
 
-        token = config.get('trello_watchman').get('secret')
+        secret = config.get('trello_watchman').get('secret')
+
     try:
-        key = os.environ['TRELLO_WATCHMAN_KEY']
+        key = os.environ.get('TRELLO_WATCHMAN_KEY')
+
     except KeyError:
         with open('{}/watchman.conf'.format(os.path.expanduser('~'))) as yaml_file:
             config = yaml.safe_load(yaml_file)
 
-        token = config.get('trello_watchman').get('key')
+        key = config.get('trello_watchman').get('key')
 
-    return TrelloAPI(key, token)
+    return TrelloAPI(key, secret)
 
 
 def deduplicate(input_list):
@@ -142,32 +156,40 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
 
     for query in rule.get('strings'):
         card_list = trello.search(query).get('cards')
-        print('{} cards found matching: {}'.format(len(card_list), query.replace('"', '')))
+        print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
         for card in card_list:
             if card.get('attachments') and convert_time(card.get('dateLastActivity')) > (now - timeframe):
+                board = trello.get_board(card.get('idBoard'))
+                board_members = trello.get_board_members(card.get('idBoard'))
 
-                results_dict = {
-                    'card_id': card.get('id'),
-                    'last_activity': card.get('dateLastActivity'),
-                    'title': card.get('name'),
-                    'description': card.get('desc'),
-                    'card_url': card.get('url'),
-                }
+                members = []
+                for member in board_members:
+                    members.append(MEMBER(member.get('id'), member.get('username')))
+
+                board_result = BOARD(board.get('id'),
+                                     board.get('name'),
+                                     board.get('desc'),
+                                     board.get('closed'),
+                                     board.get('url'),
+                                     members)
 
                 attachments = []
                 for attachment in card.get('attachments'):
-                    at_dict = {
-                        'attachment_id': attachment.get('id'),
-                        'attachment_uploaded': attachment.get('date'),
-                        'attachment_name': attachment.get('name'),
-                        'attachment_filename': attachment.get('fileName'),
-                        'attachment_url': attachment.get('url')
-                    }
-                    attachments.append(at_dict)
+                    attachments.append(ATTACHMENT(attachment.get('id'),
+                                                  attachment.get('date'),
+                                                  attachment.get('name'),
+                                                  attachment.get('fileName'),
+                                                  attachment.get('url')))
 
-                results_dict['attachments'] = attachments
+                attachment_result = ATTACHMENTRESULT(card.get('id'),
+                                                     card.get('dateLastActivity'),
+                                                     card.get('name'),
+                                                     card.get('desc'),
+                                                     card.get('url'),
+                                                     attachments,
+                                                     board_result)
 
-                results.append(results_dict)
+                results.append(attachment_result)
 
     if results:
         results = deduplicate(results)
@@ -188,7 +210,7 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
 
     for query in rule.get('strings'):
         card_list = trello.search(query).get('cards')
-        print('{} cards found matching: {}'.format(len(card_list), query.replace('"', '')))
+        print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
         for card in card_list:
             if convert_time(card.get('dateLastActivity')) > (now - timeframe):
                 board = trello.get_board(card.get('idBoard'))
@@ -198,38 +220,29 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
                 if r.search(str(card.get('desc'))):
                     members = []
                     for member in board_members:
+                        members.append(MEMBER(member.get('id'), member.get('username')))
 
-                        member_dict = {
-                            'id': member.get('id'),
-                            'username': member.get('username')
-                        }
+                    board_result = BOARD(board.get('id'),
+                                         board.get('name'),
+                                         board.get('desc'),
+                                         board.get('closed'),
+                                         board.get('url'),
+                                         members)
 
-                        members.append(member_dict)
-
-                    results_dict = {
-                        'card_id': card.get('id'),
-                        'last_activity': card.get('dateLastActivity'),
-                        'title': card.get('name'),
-                        'description': card.get('desc'),
-                        'card_url': card.get('url'),
-                        'match_string': r.search(str(card.get('desc'))).group(0),
-                        'board': {
-                            'id': board.get('id'),
-                            'name': board.get('name'),
-                            'description': board.get('desc'),
-                            'closed': board.get('closed'),
-                            'url': board.get('url'),
-                        }
-                    }
-
-                    results_dict['board']['members'] = members
+                    text_result = TEXTRESULT(card.get('id'),
+                                             card.get('dateLastActivity'),
+                                             card.get('name'),
+                                             card.get('desc'),
+                                             card.get('url'),
+                                             r.search(str(card.get('desc'))).group(0),
+                                             board_result)
 
                     if r.search(str(card.get('desc'))) or r.search(str(card.get('name'))):
-                        results.append(results_dict)
+                        results.append(text_result)
                     else:
                         for entry in actions:
                             if r.search(str(entry.get('text'))):
-                                results.append(results_dict)
+                                results.append(text_result)
     if results:
         results = deduplicate(results)
         print('{} total matches found after filtering'.format(len(results)))

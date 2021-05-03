@@ -1,9 +1,9 @@
-import json
 import os
 import logging
 import socket
 import sys
 import logging.handlers
+import simplejson as json
 from datetime import datetime
 from logging import Logger
 

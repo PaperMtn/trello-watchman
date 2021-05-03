@@ -28,7 +28,8 @@ setup(
     description=a.__summary__,
     install_requires=[
         'requests',
-        'PyYAML'
+        'PyYAML',
+        'simplejson'
     ],
     keywords='audit trello trello-watchman watchman blue-team red-team threat-hunting',
     packages=['trello_watchman'],
