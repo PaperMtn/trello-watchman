@@ -44,7 +44,7 @@ class TestEmail(unittest.TestCase):
                 rule_path = (Path(root) / rule_file).resolve()
                 if rule_path.name.endswith('.yaml'):
                     with open(rule_path) as yaml_file:
-                        self.assertTrue(check_yaml(yaml_file.read()), msg='Malformed YAML: {}'.format(yaml_file.name))
+                        self.assertTrue(check_yaml(yaml_file.read()), msg=f'Malformed YAML: {yaml_file.name}')
 
     def test_rule_matching_cases(self):
         """Test that the match case strings match the regex. Skip if the match case is 'blank'"""
