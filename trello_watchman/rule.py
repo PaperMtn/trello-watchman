@@ -22,6 +22,12 @@ class Rule(object):
         self.strings = strings
         self.pattern = pattern
 
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.__dict__!r})'
+
+    def __str__(self):
+        return ' '.join(f'{k}: {v!s}' for k, v in self.__dict__.items())
+
 
 def load_from_yaml(rule_path: pathlib.PosixPath) -> Rule:
     """Load YAML file and return a Rule object
