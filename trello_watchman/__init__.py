@@ -1,14 +1,20 @@
+import calendar
+import time
 import argparse
 import builtins
 import os
 import yaml
 from pathlib import Path
 
-from trello_watchman import config as cfg
-from trello_watchman import __about__ as a
-from trello_watchman import trello_wrapper as trello
+from trello_watchman import __about__
+from trello_watchman import trello_wrapper
 from trello_watchman import logger
 from trello_watchman import rule
+
+DAY_TIMEFRAME = 86400
+MONTH_TIMEFRAME = 2592000
+WEEK_TIMEFRAME = 604800
+ALL_TIME = calendar.timegm(time.gmtime()) + 1576800000
 
 RULES_PATH = (Path(__file__).parent / 'rules').resolve()
 OUTPUT_LOGGER = ''
@@ -33,31 +39,15 @@ def load_rules() -> list:
         raise e
 
 
-# def load_rules():
-#     """Import YAML rules"""
-#
-#     rules = []
-#     try:
-#         for root, dirs, files in os.walk(RULES_PATH):
-#             for rule in files:
-#                 rule_path = (Path(root) / rule).resolve()
-#                 if rule_path.name.endswith('.yaml'):
-#                     with open(rule_path) as yaml_file:
-#                         rule = yaml.safe_load(yaml_file)
-#                         if rule.get('enabled'):
-#                             rules.append(rule)
-#         return rules
-#     except Exception as e:
-#         if isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
-#             print = OUTPUT_LOGGER.log_critical
-#         else:
-#             print = builtins.print
-#
-#         print(e)
+def validate_conf(path: str) -> bool or list:
+    """Check the file watchman.conf exists
 
-
-def validate_conf(path: str):
-    """Check the file watchman.conf exists"""
+    Args:
+        path: Path where the conf file should be
+    Returns:
+        Either bool if environment variables have been set
+        or True if the file watchman.conf file exists in the given path
+    """
 
     if os.environ.get('TRELLO_WATCHMAN_SECRET') and os.environ.get('TRELLO_WATCHMAN_KEY'):
         return True
@@ -66,22 +56,32 @@ def validate_conf(path: str):
             return yaml.safe_load(yaml_file).get('trello_watchman')
 
 
-def search(trello_conn: trello.TrelloAPI, rule: rule.Rule, tf, scope):
+def search(trello_conn: trello_wrapper.TrelloAPI, rule: rule.Rule, tf: int, scope: str):
+    """Carries out a search on the Trello API based on the given rule,
+     timeframe and scope
+
+        Args:
+            trello_conn: Trello API connection object to carry out the search
+            rule: Rule object to use for the search
+            tf: Epoch timeframe to search back in
+            scope: What to search Trello for
+        """
+
     if isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
         print = OUTPUT_LOGGER.log_info
     else:
         print = builtins.print
 
     if scope == 'attachments':
-        print('Searching for attachments containing {}'.format(rule.meta.get('name')))
-        attachments = trello.find_attachments(trello_conn, OUTPUT_LOGGER, rule, tf)
+        print(f'Searching for attachments containing {rule.meta.name}')
+        attachments = trello_wrapper.find_attachments(trello_conn, OUTPUT_LOGGER, rule, tf)
         if attachments:
             for log_data in attachments:
                 OUTPUT_LOGGER.log_notification(log_data, scope, rule.meta.name,
                                                rule.meta.severity)
     if scope == 'text':
-        print('Searching for cards {}'.format(rule.meta.name))
-        text = trello.find_text(trello_conn, OUTPUT_LOGGER, rule, tf)
+        print(f'Searching for cards containing {rule.meta.name}')
+        text = trello_wrapper.find_text(trello_conn, OUTPUT_LOGGER, rule, tf)
         if text:
             for log_data in text:
                 OUTPUT_LOGGER.log_notification(log_data, scope, rule.meta.name,
@@ -97,7 +97,7 @@ def main():
         print = builtins.print
 
     try:
-        parser = argparse.ArgumentParser(description=a.__summary__)
+        parser = argparse.ArgumentParser(description=__about__.__summary__)
         required = parser.add_argument_group('required arguments')
         required.add_argument('--timeframe', choices=['d', 'w', 'm', 'a'], dest='time',
                               help='How far back to search: d = 24 hours w = 7 days, m = 30 days, a = all time',
@@ -105,7 +105,7 @@ def main():
         required.add_argument('--output', choices=['file', 'stdout', 'stream'], dest='logging_type',
                               help='Where to send results')
         parser.add_argument('--version', action='version',
-                            version='trello-watchman {}'.format(a.__version__))
+                            version=f'trello-watchman {__about__.__version__}')
         parser.add_argument('--all', dest='everything', action='store_true',
                             help='Find everything')
         parser.add_argument('--attachments', dest='attachments', action='store_true',
@@ -121,24 +121,23 @@ def main():
         logging_type = args.logging_type
 
         if tm == 'd':
-            tf = cfg.DAY_TIMEFRAME
+            tf = DAY_TIMEFRAME
         elif tm == 'w':
-            tf = cfg.WEEK_TIMEFRAME
+            tf = WEEK_TIMEFRAME
         elif tm == 'm':
-            tf = cfg.MONTH_TIMEFRAME
+            tf = MONTH_TIMEFRAME
         else:
-            tf = cfg.ALL_TIME
+            tf = ALL_TIME
 
-        conf_path = '{}/watchman.conf'.format(os.path.expanduser('~'))
+        conf_path = f'{os.path.expanduser("~")}/watchman.conf'
 
         if not validate_conf(conf_path):
-            raise Exception(
-                'TRELLO_WATCHMAN_SECRET/TRELLO_WATCHMAN_KEY environment variable or watchman.conf file not detected.'
-                '\nEnsure environment variable is set or a valid file is located in your home '
-                'directory: {} '.format(os.path.expanduser('~')))
+            raise Exception(f'TRELLO_WATCHMAN_SECRET/TRELLO_WATCHMAN_KEY environment variable or watchman.conf file '
+                            f'not detected. \nEnsure environment variable is set or a valid file is located in your '
+                            f'home directory: {os.path.expanduser("~")}')
         else:
             config = validate_conf(conf_path)
-            connection = trello.initiate_trello_connection()
+            connection = trello_wrapper.initiate_trello_connection()
 
         if logging_type:
             if logging_type == 'file':
@@ -169,15 +168,15 @@ def main():
         if not isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
             print = builtins.print
             print('Trello Watchman')
-            print('Version: {}\n'.format(a.__version__))
+            print(f'Version: {__about__.__version__}\n')
             print('Importing rules...')
             rules_list = load_rules()
-            print('{} rules loaded'.format(len(rules_list)))
+            print(f'{len(rules_list)} rules loaded')
         else:
-            OUTPUT_LOGGER.log_info('Trello Watchman started execution - Version: {}'.format(a.__version__))
+            OUTPUT_LOGGER.log_info(f'Trello Watchman started execution - Version: {__about__.__version__}')
             OUTPUT_LOGGER.log_info('Importing rules...')
             rules_list = load_rules()
-            OUTPUT_LOGGER.log_info('{} rules loaded'.format(len(rules_list)))
+            OUTPUT_LOGGER.log_info(f'{len(rules_list)} rules loaded')
             print = OUTPUT_LOGGER.log_info
 
         if everything:

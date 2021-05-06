@@ -25,7 +25,7 @@ class LoggingBase(Logger):
 class FileLogger(LoggingBase):
     def __init__(self, log_path):
         LoggingBase.__init__(self)
-        self.handler = logging.handlers.WatchedFileHandler(os.path.join(log_path, 'gitlab_watchman.log'))
+        self.handler = logging.handlers.WatchedFileHandler(os.path.join(log_path, 'trello_watchman.log'))
         self.logger.addHandler(self.handler)
 
     def log_notification(self, log_data, scope, detect_type, severity):
