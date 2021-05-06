@@ -11,14 +11,14 @@ from requests.exceptions import HTTPError
 from requests.packages.urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 
-from trello_watchman import config as cfg
 from trello_watchman import logger
+from trello_watchman import rule
 
-TEXTRESULT = namedtuple('TextResult', ('card_id', 'last_activity', 'title', 'description', 'url',
-                                       'match_string', 'board'))
+TEXT_RESULT = namedtuple('TextResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                        'match_string', 'board'))
 
-ATTACHMENTRESULT = namedtuple('AttachmentResult', ('card_id', 'last_activity', 'title', 'description', 'url',
-                                                   'attachments', 'board'))
+ATTACHMENT_RESULT = namedtuple('AttachmentResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                                    'attachments', 'board'))
 
 BOARD = namedtuple('Board', ('id', 'name', 'description', 'closed', 'url', 'members'))
 
@@ -28,14 +28,30 @@ ATTACHMENT = namedtuple('Attachment', ('id', 'name', 'uploaded', 'filename', 'ur
 
 
 class TrelloAPI(object):
-    def __init__(self, key, token):
+    """Class that handles API connections to Trello and allows various requests
+
+    Attributes:
+        key: Trello API OAuth key
+        token: Trello OAuth token
+        base_url: Base level URL for the Trello API
+        session: Requests session object
+    """
+
+    def __init__(self, key: str, token: str):
+        """Inits DigitalShadowsAPI with base URL and required API arguments.
+        Creates a requests session, mounts it and auths it.
+
+        Args:
+            key: Trello API OAuth key
+            token: Trello API OAuth token
+        """
+
         self.key = key
         self.token = token
         self.base_url = 'https://api.trello.com'
         self.session = session = requests.session()
         session.mount(self.base_url, HTTPAdapter(max_retries=Retry(connect=3, backoff_factor=1)))
-        session.headers.update({'Authorization': 'OAuth oauth_consumer_key="{}", oauth_token="{}"'
-                               .format(self.key, self.token)})
+        session.headers.update({'Authorization': f'OAuth oauth_consumer_key="{self.key}", oauth_token="{self.token}"'})
         session.params.update({
             'cards_limit': 1000,
             'card_members': 'true',
@@ -46,7 +62,12 @@ class TrelloAPI(object):
             'modelTypes': ['cards', 'boards'],
         })
 
-    def make_request(self, url, params=None, data=None, method='GET', verify_ssl=True):
+    def _make_request(self,
+                      url: str,
+                      params: dict or str = None,
+                      data: dict or str = None,
+                      method: str = 'GET',
+                      verify_ssl: bool = True) -> requests.Response:
         try:
             relative_url = '/'.join((self.base_url, '1', url))
             response = self.session.request(method, relative_url, params=params, data=data, verify=verify_ssl)
@@ -74,45 +95,98 @@ class TrelloAPI(object):
             print(e)
 
     def get_me(self):
+        """Get Trello account information on the user the OAuth token
+        is linked to
 
-        return self.make_request('members/me').json()
+        Returns:
+            JSON object containing Trello data for the user of the API token
+        """
 
-    def get_card(self, card_id):
+        return self._make_request('members/me').json()
 
-        return self.make_request('cards/{}'.format(card_id)).json()
+    def get_card(self, card_id: str) -> json:
+        """Get Trello card by ID
 
-    def get_card_actions(self, card_id):
+        Args:
+            card_id: ID number for the Trello card to retrieve
+        Returns:
+            JSON object containing Trello card data
+        """
 
-        return self.make_request('cards/{}/actions'.format(card_id)).json()
+        return self._make_request(f'cards/{card_id}').json()
 
-    def get_board(self, board_id):
+    def get_card_actions(self, card_id: str) -> json:
+        """Get actions carried out on a card by ID
 
-        return self.make_request('boards/{}'.format(board_id)).json()
+        Args:
+            card_id: ID number for the Trello card to retrieve actions for
+        Returns:
+            JSON object containing Trello card actions data
+        """
 
-    def get_board_members(self, board_id):
+        return self._make_request(f'cards/{card_id}/actions').json()
 
-        return self.make_request('boards/{}/members'.format(board_id)).json()
+    def get_board(self, board_id: str) -> json:
+        """Get Trello board by ID
 
-    def get_member(self, member_id):
+        Args:
+            board_id: ID number for the Trello board to retrieve
+        Returns:
+            JSON object containing Trello board data
+        """
 
-        return self.make_request('members/{}'.format(member_id)).json()
+        return self._make_request(f'boards/{board_id}').json()
 
-    def search(self, query):
+    def get_board_members(self, board_id: str) -> json:
+        """Get Trello board members by ID
+
+        Args:
+            board_id: ID number for the Trello board members to retrieve
+        Returns:
+            JSON object containing Trello board members data
+        """
+
+        return self._make_request(f'boards/{board_id}/members').json()
+
+    def get_member(self, member_id: str) -> json:
+        """Get Trello member by ID
+
+        Args:
+            member_id: ID number for the Trello member to retrieve
+        Returns:
+            JSON object containing Trello member data
+        """
+
+        return self._make_request(f'members/{member_id}').json()
+
+    def search(self, query: str) -> json:
+        """Search Trello for matches to the given query
+
+        Args:
+            query: String query to search across Trello for
+        Returns:
+            JSON object containing Trello search results
+        """
 
         self.session.params.update({
             'query': query,
         })
 
-        return self.make_request('search').json()
+        return self._make_request('search').json()
 
 
-def initiate_trello_connection():
-    """Create a Trello API client object"""
+def initiate_trello_connection() -> TrelloAPI:
+    """Checks for credentials in environment variables of .conf file.
+    If present, creates a Trello API client object authed to those credentials
+
+    Returns:
+        Trello API object
+    """
 
     try:
         secret = os.environ.get('TRELLO_WATCHMAN_SECRET')
     except KeyError:
-        with open('{}/watchman.conf'.format(os.path.expanduser('~'))) as yaml_file:
+        with open(f'{os.path.expanduser("~")}/watchman.conf') as yaml_file:
             config = yaml.safe_load(yaml_file)
 
         secret = config.get('trello_watchman').get('secret')
@@ -121,7 +195,7 @@ def initiate_trello_connection():
         key = os.environ.get('TRELLO_WATCHMAN_KEY')
 
     except KeyError:
-        with open('{}/watchman.conf'.format(os.path.expanduser('~'))) as yaml_file:
+        with open(f'{os.path.expanduser("~")}/watchman.conf') as yaml_file:
             config = yaml.safe_load(yaml_file)
 
         key = config.get('trello_watchman').get('key')
@@ -129,23 +203,50 @@ def initiate_trello_connection():
     return TrelloAPI(key, secret)
 
 
-def deduplicate(input_list):
-    """Removes duplicates where results are returned by multiple queries"""
+def deduplicate(input_list: list) -> list:
+    """Removes duplicates where results are returned by multiple queries
+
+    Args:
+        input_list: list of dict results to remove duplicate entries from
+    Returns:
+        De-duplicated list of results
+    """
 
     list_of_strings = [json.dumps(d) for d in input_list]
     list_of_strings = set(list_of_strings)
     deduped_list = [json.loads(s) for s in list_of_strings]
-    return {match.get('card_id'): match for match in reversed(deduped_list)}.values()
+    return list({match.get('card_id'): match for match in reversed(deduped_list)}.values())
 
 
-def convert_time(timestamp):
-    """Convert ISO 8601 timestamp to epoch """
+def convert_time(timestamp: str) -> int:
+    """Convert ISO 8601 timestamp to epoch
+
+    Args:
+        timestamp: String timestamp in the format:
+            %Y-%m-%dT%H:%M:%S.%f%z
+    Returns:
+        Integer with the converted Unix epoch timestamp in seconds
+    """
 
     pattern = '%Y-%m-%dT%H:%M:%S.%f%z'
     return int(time.mktime(time.strptime(timestamp, pattern)))
 
 
-def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
+def find_attachments(trello: TrelloAPI,
+                     log_handler: logger.Logger,
+                     rule: rule.Rule,
+                     timeframe=calendar.timegm(time.gmtime()) + 1576800000) -> list:
+    """ Search Trello for attachments in cards based on the given rule and timeframe
+
+    Args:
+        trello: TrelloAPI object with authed connection to Trello
+        log_handler: Logger object for outputting results
+        rule: Rule object containing what to search for
+        timeframe: Time period to search back
+    Returns:
+        A list containing dict objects ready to be logged as JSON
+    """
+
     results = []
     now = calendar.timegm(time.gmtime())
 
@@ -154,9 +255,10 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
     else:
         print = builtins.print
 
-    for query in rule.get('strings'):
+    for query in rule.strings:
         card_list = trello.search(query).get('cards')
-        print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
+        formatted_query = str(query).replace('"', '')
+        print(f'{len(card_list)} cards found matching: {formatted_query}')
         for card in card_list:
             if card.get('attachments') and convert_time(card.get('dateLastActivity')) > (now - timeframe):
                 board = trello.get_board(card.get('idBoard'))
@@ -181,25 +283,39 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
                                                   attachment.get('fileName'),
                                                   attachment.get('url')))
 
-                attachment_result = ATTACHMENTRESULT(card.get('id'),
-                                                     card.get('dateLastActivity'),
-                                                     card.get('name'),
-                                                     card.get('desc'),
-                                                     card.get('url'),
-                                                     attachments,
-                                                     board_result)
+                attachment_result = ATTACHMENT_RESULT(card.get('id'),
+                                                      card.get('dateLastActivity'),
+                                                      card.get('name'),
+                                                      card.get('desc'),
+                                                      card.get('url'),
+                                                      attachments,
+                                                      board_result)
 
                 results.append(attachment_result)
 
     if results:
         results = deduplicate(results)
-        print('{} total matches found after filtering'.format(len(results)))
+        print(f'{len(results)} total matches found after filtering')
         return results
     else:
         print('No matches found after filtering')
 
 
-def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
+def find_text(trello: TrelloAPI,
+              log_handler: logger.Logger,
+              rule: rule.Rule,
+              timeframe=calendar.timegm(time.gmtime()) + 1576800000):
+    """ Search Trello for text in cards based on the given rule and timeframe
+
+        Args:
+            trello: TrelloAPI object with authed connection to Trello
+            log_handler: Logger object for outputting results
+            rule: Rule object containing what to search for
+            timeframe: Time period to search back
+        Returns:
+            A list containing dict objects ready to be logged as JSON
+    """
+
     results = []
     now = calendar.timegm(time.gmtime())
 
@@ -208,15 +324,16 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
     else:
         print = builtins.print
 
-    for query in rule.get('strings'):
+    for query in rule.strings:
         card_list = trello.search(query).get('cards')
-        print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
+        formatted_query = str(query).replace('"', '')
+        print(f'{len(card_list)} cards found matching: {formatted_query}')
         for card in card_list:
             if convert_time(card.get('dateLastActivity')) > (now - timeframe):
                 board = trello.get_board(card.get('idBoard'))
                 board_members = trello.get_board_members(card.get('idBoard'))
                 actions = trello.get_card_actions(card.get('id'))
-                r = re.compile(rule.get('pattern'))
+                r = re.compile(rule.pattern)
                 if r.search(str(card.get('desc'))):
                     members = []
                     for member in board_members:
@@ -229,13 +346,13 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
                                          board.get('url'),
                                          members)
 
-                    text_result = TEXTRESULT(card.get('id'),
-                                             card.get('dateLastActivity'),
-                                             card.get('name'),
-                                             card.get('desc'),
-                                             card.get('url'),
-                                             r.search(str(card.get('desc'))).group(0),
-                                             board_result)
+                    text_result = TEXT_RESULT(card.get('id'),
+                                              card.get('dateLastActivity'),
+                                              card.get('name'),
+                                              card.get('desc'),
+                                              card.get('url'),
+                                              r.search(str(card.get('desc'))).group(0),
+                                              board_result)
 
                     if r.search(str(card.get('desc'))) or r.search(str(card.get('name'))):
                         results.append(text_result)
@@ -245,7 +362,7 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
                                 results.append(text_result)
     if results:
         results = deduplicate(results)
-        print('{} total matches found after filtering'.format(len(results)))
+        print(f'{len(results)} total matches found after filtering')
         return results
     else:
         print('No matches found after filtering')
