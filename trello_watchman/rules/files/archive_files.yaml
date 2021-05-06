@@ -5,6 +5,7 @@ meta:
   name: Archive Files
   author: PaperMtn
   date: '2021-02-06'
+  version: 1
   description: Detects potentially exposed archive files
   severity: '70'
 scope:

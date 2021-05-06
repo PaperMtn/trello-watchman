@@ -13,12 +13,13 @@ from requests.adapters import HTTPAdapter
 
 from trello_watchman import config as cfg
 from trello_watchman import logger
+from trello_watchman import rule
 
-TEXTRESULT = namedtuple('TextResult', ('card_id', 'last_activity', 'title', 'description', 'url',
-                                       'match_string', 'board'))
+TEXT_RESULT = namedtuple('TextResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                        'match_string', 'board'))
 
-ATTACHMENTRESULT = namedtuple('AttachmentResult', ('card_id', 'last_activity', 'title', 'description', 'url',
-                                                   'attachments', 'board'))
+ATTACHMENT_RESULT = namedtuple('AttachmentResult', ('card_id', 'last_activity', 'title', 'description', 'url',
+                                                    'attachments', 'board'))
 
 BOARD = namedtuple('Board', ('id', 'name', 'description', 'closed', 'url', 'members'))
 
@@ -145,7 +146,7 @@ def convert_time(timestamp):
     return int(time.mktime(time.strptime(timestamp, pattern)))
 
 
-def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
+def find_attachments(trello: TrelloAPI, log_handler, rule: rule.Rule, timeframe=cfg.ALL_TIME):
     results = []
     now = calendar.timegm(time.gmtime())
 
@@ -154,7 +155,7 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
     else:
         print = builtins.print
 
-    for query in rule.get('strings'):
+    for query in rule.strings:
         card_list = trello.search(query).get('cards')
         print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
         for card in card_list:
@@ -181,13 +182,13 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
                                                   attachment.get('fileName'),
                                                   attachment.get('url')))
 
-                attachment_result = ATTACHMENTRESULT(card.get('id'),
-                                                     card.get('dateLastActivity'),
-                                                     card.get('name'),
-                                                     card.get('desc'),
-                                                     card.get('url'),
-                                                     attachments,
-                                                     board_result)
+                attachment_result = ATTACHMENT_RESULT(card.get('id'),
+                                                      card.get('dateLastActivity'),
+                                                      card.get('name'),
+                                                      card.get('desc'),
+                                                      card.get('url'),
+                                                      attachments,
+                                                      board_result)
 
                 results.append(attachment_result)
 
@@ -199,7 +200,7 @@ def find_attachments(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIM
         print('No matches found after filtering')
 
 
-def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
+def find_text(trello: TrelloAPI, log_handler, rule: rule.Rule, timeframe=cfg.ALL_TIME):
     results = []
     now = calendar.timegm(time.gmtime())
 
@@ -208,7 +209,7 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
     else:
         print = builtins.print
 
-    for query in rule.get('strings'):
+    for query in rule.strings:
         card_list = trello.search(query).get('cards')
         print('{} cards found matching: {}'.format(len(card_list), str(query).replace('"', '')))
         for card in card_list:
@@ -216,7 +217,7 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
                 board = trello.get_board(card.get('idBoard'))
                 board_members = trello.get_board_members(card.get('idBoard'))
                 actions = trello.get_card_actions(card.get('id'))
-                r = re.compile(rule.get('pattern'))
+                r = re.compile(rule.pattern)
                 if r.search(str(card.get('desc'))):
                     members = []
                     for member in board_members:
@@ -229,13 +230,13 @@ def find_text(trello: TrelloAPI, log_handler, rule, timeframe=cfg.ALL_TIME):
                                          board.get('url'),
                                          members)
 
-                    text_result = TEXTRESULT(card.get('id'),
-                                             card.get('dateLastActivity'),
-                                             card.get('name'),
-                                             card.get('desc'),
-                                             card.get('url'),
-                                             r.search(str(card.get('desc'))).group(0),
-                                             board_result)
+                    text_result = TEXT_RESULT(card.get('id'),
+                                              card.get('dateLastActivity'),
+                                              card.get('name'),
+                                              card.get('desc'),
+                                              card.get('url'),
+                                              r.search(str(card.get('desc'))).group(0),
+                                              board_result)
 
                     if r.search(str(card.get('desc'))) or r.search(str(card.get('name'))):
                         results.append(text_result)

@@ -8,35 +8,55 @@ from trello_watchman import config as cfg
 from trello_watchman import __about__ as a
 from trello_watchman import trello_wrapper as trello
 from trello_watchman import logger
+from trello_watchman import rule
 
 RULES_PATH = (Path(__file__).parent / 'rules').resolve()
 OUTPUT_LOGGER = ''
 
 
-def load_rules():
-    """Import YAML rules"""
+def load_rules() -> list:
+    """Load rules from YAML files
 
-    rules = []
+    Returns:
+        List containing loaded definitions as Rule objects
+    """
+
+    loaded_definitions = []
     try:
         for root, dirs, files in os.walk(RULES_PATH):
-            for rule in files:
-                rule_path = (Path(root) / rule).resolve()
+            for rule_file in files:
+                rule_path = (Path(root) / rule_file).resolve()
                 if rule_path.name.endswith('.yaml'):
-                    with open(rule_path) as yaml_file:
-                        rule = yaml.safe_load(yaml_file)
-                        if rule.get('enabled'):
-                            rules.append(rule)
-        return rules
+                    loaded_definitions.append(rule.load_from_yaml(rule_path))
+        return loaded_definitions
     except Exception as e:
-        if isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
-            print = OUTPUT_LOGGER.log_critical
-        else:
-            print = builtins.print
-
-        print(e)
+        raise e
 
 
-def validate_conf(path):
+# def load_rules():
+#     """Import YAML rules"""
+#
+#     rules = []
+#     try:
+#         for root, dirs, files in os.walk(RULES_PATH):
+#             for rule in files:
+#                 rule_path = (Path(root) / rule).resolve()
+#                 if rule_path.name.endswith('.yaml'):
+#                     with open(rule_path) as yaml_file:
+#                         rule = yaml.safe_load(yaml_file)
+#                         if rule.get('enabled'):
+#                             rules.append(rule)
+#         return rules
+#     except Exception as e:
+#         if isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
+#             print = OUTPUT_LOGGER.log_critical
+#         else:
+#             print = builtins.print
+#
+#         print(e)
+
+
+def validate_conf(path: str):
     """Check the file watchman.conf exists"""
 
     if os.environ.get('TRELLO_WATCHMAN_SECRET') and os.environ.get('TRELLO_WATCHMAN_KEY'):
@@ -46,26 +66,26 @@ def validate_conf(path):
             return yaml.safe_load(yaml_file).get('trello_watchman')
 
 
-def search(trello_conn, rule, tf, scope):
+def search(trello_conn: trello.TrelloAPI, rule: rule.Rule, tf, scope):
     if isinstance(OUTPUT_LOGGER, logger.StdoutLogger):
         print = OUTPUT_LOGGER.log_info
     else:
         print = builtins.print
 
     if scope == 'attachments':
-        print('Searching for attachments containing {}'.format(rule.get('meta').get('name')))
+        print('Searching for attachments containing {}'.format(rule.meta.get('name')))
         attachments = trello.find_attachments(trello_conn, OUTPUT_LOGGER, rule, tf)
         if attachments:
             for log_data in attachments:
-                OUTPUT_LOGGER.log_notification(log_data, scope, rule.get('meta').get('name'),
-                                               rule.get('meta').get('severity'))
+                OUTPUT_LOGGER.log_notification(log_data, scope, rule.meta.name,
+                                               rule.meta.severity)
     if scope == 'text':
-        print('Searching for cards {}'.format(rule.get('meta').get('name')))
+        print('Searching for cards {}'.format(rule.meta.name))
         text = trello.find_text(trello_conn, OUTPUT_LOGGER, rule, tf)
         if text:
             for log_data in text:
-                OUTPUT_LOGGER.log_notification(log_data, scope, rule.get('meta').get('name'),
-                                               rule.get('meta').get('severity'))
+                OUTPUT_LOGGER.log_notification(log_data, scope, rule.meta.name,
+                                               rule.meta.severity)
 
 
 def main():
@@ -163,20 +183,20 @@ def main():
         if everything:
             print('Getting everything...')
             for rule in rules_list:
-                if 'attachments' in rule.get('scope'):
+                if 'attachments' in rule.scope:
                     search(connection, rule, tf, 'attachments')
-                if 'text' in rule.get('scope'):
+                if 'text' in rule.scope:
                     search(connection, rule, tf, 'text')
         else:
             if attachments:
                 print('Getting attachments')
                 for rule in rules_list:
-                    if 'attachments' in rule.get('scope'):
+                    if 'attachments' in rule.scope:
                         search(connection, rule, tf, 'attachments')
             if text:
                 print('Getting cards')
                 for rule in rules_list:
-                    if 'text' in rule.get('scope'):
+                    if 'text' in rule.scope:
                         search(connection, rule, tf, 'text')
 
         print('++++++Audit completed++++++')
