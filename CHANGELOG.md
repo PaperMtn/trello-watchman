@@ -1,2 +1,7 @@
-## 1.0.0 - 2021-03-x
+## 1.0.1 - 2021-05-07
+Release
+
 ### Added
+- Actions for testing and publishing added
+- Supported Python versions updated
+
